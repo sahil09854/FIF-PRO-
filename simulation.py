@@ -92,7 +92,7 @@ def simulate_match(team1_ids: list, team2_ids: list, team1_name: str = "Team 1",
             events.append((minute, random.choice(COMMENTARY_PENALTY).format(team=team_name)))
 
         # goal probability: attacker strength vs defender strength + randomness
-        goal_chance = (att_strength / (att_strength + def_strength)) + random.uniform(-0.25, 0.25)
+            goal_chance = (att_strength / (att_strength + def_strength)) + random.uniform(-0.25, 0.25)
             if goal_chance > 0.55:
             scorer = pick_scorer(attacking_ids)
             events.append((minute, random.choice(COMMENTARY_GOAL).format(scorer=scorer)))
