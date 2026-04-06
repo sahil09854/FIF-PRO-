@@ -9,7 +9,7 @@ from handlers.squad import (view_collection_handler, view_squad_handler,
                               set_squad_handler, collection_page_callback)
 from handlers.match import (challenge_handler, accept_challenge_callback,
                              quickmatch_handler, quickmatch_accept_callback,
-                             draft_pick_callback, coop_challenge_handler)
+                             quick_draft_pick_callback, coop_challenge_handler)
 from handlers.profile import profile_handler, leaderboard_handler, shop_handler
 
 logging.basicConfig(
