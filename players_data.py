@@ -102,3 +102,4 @@ POSITION_EMOJI = {
     "CDM": "⚙️", "CM": "⚙️", "CAM": "🎯",
     "LW": "⚡", "RW": "⚡", "ST": "🔥",
 }
+PLAYER_MAP = {p["id"]: p for p in PLAYERS}
