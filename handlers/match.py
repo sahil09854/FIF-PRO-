@@ -139,7 +139,7 @@ async def quickmatch_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ]])
     await update.message.reply_text(
         f"⚡ *{user.first_name}* challenges *@{mention}* to a Quick Match!\n\n"
-        f"🔒 Secret draft — pick your 5 privately!\n"
+        f"🔒 Secret draft — pick 5 players privately!\n"
         f"1st pick is GK, rest is your choice.\n\n"
         f"⚠️ Both players must have started the bot privately first!\n\n"
         f"@{mention} — accept?",
@@ -166,7 +166,7 @@ async def quickmatch_accept_callback(update: Update, context: ContextTypes.DEFAU
         await query.answer("You can't accept your own challenge!", show_alert=True)
         return
     get_or_create_user(opponent.id, opponent.first_name)
-    match_key = f"draft_{challenger_id}_{opponent.id}"
+    match_key = f"draft.{challenger_id}.{opponent.id}"
     draft_sessions[match_key] = {
         "team1_id": challenger_id,
         "team1_name": challenge["challenger_name"],
@@ -202,7 +202,7 @@ async def quickmatch_accept_callback(update: Update, context: ContextTypes.DEFAU
         await context.bot.send_message(
             chat_id,
             f"❌ Couldn't DM: *{', '.join(failed)}*\n\n"
-            f"Open the bot privately → press /start → then try again!",
+            f"Open the bot privately → press /start → try again!",
             parse_mode="Markdown"
         )
         draft_sessions.pop(match_key, None)
@@ -224,9 +224,10 @@ async def send_pick_to_player(context, match_key: str, user_id: int, chat_id: in
     buttons = []
     for p in options:
         r = RARITY_EMOJI[p["rarity"]]
+        cb = f"qd|{match_key}|{user_id}|{p['id']}"
         buttons.append([InlineKeyboardButton(
             f"{r} {p['name']} ({p['position']}) OVR {p['overall']}",
-            callback_data=f"qdraft:{match_key}:{user_id}:{p['id']}"
+            callback_data=cb
         )])
     name = session["team1_name"] if is_team1 else session["team2_name"]
     await context.bot.send_message(
@@ -239,7 +240,7 @@ async def send_pick_to_player(context, match_key: str, user_id: int, chat_id: in
 async def quick_draft_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    parts = query.data.split(":")
+    parts = query.data.split("|")
     match_key = parts[1]
     target_user_id = int(parts[2])
     pid = int(parts[3])
@@ -270,13 +271,13 @@ async def quick_draft_pick_callback(update: Update, context: ContextTypes.DEFAUL
         else:
             session["team2_done"] = True
         await context.bot.send_message(
-            user_id=user.id,
+            chat_id=user.id,
             text="✅ *Your team is locked in!*\nWaiting for opponent... ⏳",
             parse_mode="Markdown"
         )
         await context.bot.send_message(
-            chat_id,
-            f"✅ *{user.first_name}* has finished picking! Waiting for opponent... ⏳",
+            chat_id=chat_id,
+            text=f"✅ *{user.first_name}* has finished picking! Waiting for opponent... ⏳",
             parse_mode="Markdown"
         )
         if session["team1_done"] and session["team2_done"]:
@@ -292,7 +293,7 @@ async def reveal_and_simulate(context, match_key: str, chat_id: int):
     t2_ids = session["team2_picks"]
     squad1 = format_squad_card(t1_ids, f"⚡ {session['team1_name']}'s Squad")
     squad2 = format_squad_card(t2_ids, f"⚡ {session['team2_name']}'s Squad")
-    await context.bot.send_message(chat_id, "🎭 *Both teams are ready! Revealing now...*", parse_mode="Markdown")
+    await context.bot.send_message(chat_id, "🎭 *Both teams ready! Revealing now...*", parse_mode="Markdown")
     await asyncio.sleep(1)
     await context.bot.send_message(chat_id, squad1, parse_mode="Markdown")
     await context.bot.send_message(chat_id, squad2, parse_mode="Markdown")
