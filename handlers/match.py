@@ -34,8 +34,6 @@ def format_options_text(options, slot_label):
         lines.append(f"{r}{pos} *{p['name']}* ({p['position']}) OVR {p['overall']}")
     return "\n".join(lines)
 
-# ─── 1v1 Full Squad ───────────────────────────────────────────────────────────
-
 async def challenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger = update.effective_user
     get_or_create_user(challenger.id, challenger.first_name)
@@ -113,16 +111,15 @@ async def accept_challenge_callback(update: Update, context: ContextTypes.DEFAUL
 async def coop_challenge_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤝 2v2 co-op coming soon!")
 
-# ─── Quick Match — Anonymous Simultaneous Draft ───────────────────────────────
-
 async def quickmatch_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     get_or_create_user(user.id, user.first_name)
     chat_id = update.effective_chat.id
     if not context.args:
         await update.message.reply_text(
-            "⚡ *Quick Match — Draft Mode*\n\n"
-            "Both pick 5 players anonymously.\nFirst pick is GK, rest is your choice!\n\n"
+            "⚡ *Quick Match — Secret Draft*\n\n"
+            "Both pick 5 players privately.\n"
+            "Teams revealed at the end!\n\n"
             "Usage: `/quickmatch @username`",
             parse_mode="Markdown"
         )
@@ -137,12 +134,14 @@ async def quickmatch_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "mention": mention,
     }
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Accept Draft", callback_data=f"qmaccept:{user.id}"),
+        InlineKeyboardButton("✅ Accept", callback_data=f"qmaccept:{user.id}"),
         InlineKeyboardButton("❌ Decline", callback_data=f"qmdecline:{user.id}"),
     ]])
     await update.message.reply_text(
-        f"⚡ *{user.first_name}* wants a Quick Match vs *@{mention}*!\n\n"
-        f"5-a-side anonymous draft — pick your team secretly!\n\n"
+        f"⚡ *{user.first_name}* challenges *@{mention}* to a Quick Match!\n\n"
+        f"🔒 Secret draft — pick your 5 privately!\n"
+        f"1st pick is GK, rest is your choice.\n\n"
+        f"⚠️ Both players must have started the bot privately first!\n\n"
         f"@{mention} — accept?",
         parse_mode="Markdown", reply_markup=kb
     )
@@ -179,19 +178,34 @@ async def quickmatch_accept_callback(update: Update, context: ContextTypes.DEFAU
         "team2_done": False,
         "chat_id": chat_id,
         "match_key": match_key,
-        "slot": 0,  # 0=GK, 1-4=ANY
     }
     pending_challenges[chat_id].pop(key, None)
     await query.edit_message_text(
         f"✅ *Draft started!*\n\n"
         f"*{challenge['challenger_name']}* vs *{opponent.first_name}*\n\n"
-        f"Both of you will receive your picks privately in this chat.\n"
-        f"Your choices are *hidden* from your opponent until the end! 🤫",
+        f"🔒 Check your *private chat* with the bot to pick your team!\n"
+        f"Both teams are secret until the end 🤫",
         parse_mode="Markdown"
     )
-    # Send picks to both players simultaneously
-    await send_pick_to_player(context, match_key, challenger_id, chat_id)
-    await send_pick_to_player(context, match_key, opponent.id, chat_id)
+    failed = []
+    try:
+        await send_pick_to_player(context, match_key, challenger_id, chat_id)
+    except Exception as e:
+        print(f"Error sending to challenger: {e}")
+        failed.append(challenge["challenger_name"])
+    try:
+        await send_pick_to_player(context, match_key, opponent.id, chat_id)
+    except Exception as e:
+        print(f"Error sending to opponent: {e}")
+        failed.append(opponent.first_name)
+    if failed:
+        await context.bot.send_message(
+            chat_id,
+            f"❌ Couldn't DM: *{', '.join(failed)}*\n\n"
+            f"Open the bot privately → press /start → then try again!",
+            parse_mode="Markdown"
+        )
+        draft_sessions.pop(match_key, None)
 
 async def send_pick_to_player(context, match_key: str, user_id: int, chat_id: int):
     session = draft_sessions.get(match_key)
@@ -200,123 +214,99 @@ async def send_pick_to_player(context, match_key: str, user_id: int, chat_id: in
     is_team1 = user_id == session["team1_id"]
     my_picks = session["team1_picks"] if is_team1 else session["team2_picks"]
     slot_index = len(my_picks)
-
     if slot_index >= len(DRAFT_SLOTS):
         return
-
     slot = DRAFT_SLOTS[slot_index]
-    slot_label = "Goalkeeper 🧤" if slot == "GK" else f"Player {slot_index + 1} (any position)"
-
-    # Generate fresh random options each time, exclude already picked by this player
+    slot_label = "Goalkeeper 🧤" if slot == "GK" else f"Player {slot_index + 1} — any position"
     options = get_random_options(position=slot, exclude_ids=my_picks, count=5)
-
     text = format_options_text(options, slot_label)
-    text += f"\n\n📋 *Your picks so far: {slot_index}/5*"
-
+    text += f"\n\n📋 *Picks: {slot_index}/5*"
     buttons = []
     for p in options:
         r = RARITY_EMOJI[p["rarity"]]
         buttons.append([InlineKeyboardButton(
-            f"{r} {p['name']} ({p['position']}) {p['overall']}",
+            f"{r} {p['name']} ({p['position']}) OVR {p['overall']}",
             callback_data=f"qdraft:{match_key}:{user_id}:{p['id']}"
         )])
-
-    try:
-        await context.bot.send_message(
-            chat_id,
-            f"🔒 *[PRIVATE — {session['team1_name'] if is_team1 else session['team2_name']}]*\n\n" + text,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except Exception as e:
-        print(f"Error sending pick: {e}")
+    name = session["team1_name"] if is_team1 else session["team2_name"]
+    await context.bot.send_message(
+        user_id,
+        f"🔒 *Secret Draft — {name}*\n\n" + text,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 async def quick_draft_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     parts = query.data.split(":")
-    _, match_key, target_user_str, pid_str = parts[0], parts[1], parts[2], parts[3]
-    target_user_id = int(target_user_str)
-    pid = int(pid_str)
+    match_key = parts[1]
+    target_user_id = int(parts[2])
+    pid = int(parts[3])
     user = query.from_user
-
     if user.id != target_user_id:
         await query.answer("This pick is not for you!", show_alert=True)
         return
-
     session = draft_sessions.get(match_key)
     if not session:
         await query.answer("Session expired!", show_alert=True)
         return
-
     is_team1 = user.id == session["team1_id"]
     my_picks = session["team1_picks"] if is_team1 else session["team2_picks"]
-
     if pid in my_picks:
         await query.answer("Already picked!", show_alert=True)
         return
-
     my_picks.append(pid)
     p = PLAYER_MAP.get(pid)
-
+    chat_id = session["chat_id"]
     await query.edit_message_text(
-        f"✅ *{user.first_name}* picked *{p['name']}* ({p['position']}) OVR {p['overall']}\n"
+        f"✅ *{p['name']}* ({p['position']}) OVR {p['overall']} — picked!\n"
         f"📋 Picks: {len(my_picks)}/5",
         parse_mode="Markdown"
     )
-
-    chat_id = session["chat_id"]
-
-    # Check if this player is done
     if len(my_picks) >= len(DRAFT_SLOTS):
         if is_team1:
             session["team1_done"] = True
         else:
             session["team2_done"] = True
-
         await context.bot.send_message(
-            chat_id,
-            f"✅ *{user.first_name}* has finished drafting! Waiting for opponent... ⏳",
+            user_id=user.id,
+            text="✅ *Your team is locked in!*\nWaiting for opponent... ⏳",
             parse_mode="Markdown"
         )
-
-        # If both done — reveal and simulate
+        await context.bot.send_message(
+            chat_id,
+            f"✅ *{user.first_name}* has finished picking! Waiting for opponent... ⏳",
+            parse_mode="Markdown"
+        )
         if session["team1_done"] and session["team2_done"]:
             await reveal_and_simulate(context, match_key, chat_id)
     else:
-        # Send next pick
         await send_pick_to_player(context, match_key, user.id, chat_id)
 
 async def reveal_and_simulate(context, match_key: str, chat_id: int):
     session = draft_sessions.get(match_key)
     if not session:
         return
-
     t1_ids = session["team1_picks"]
     t2_ids = session["team2_picks"]
-
-    # Reveal both teams
     squad1 = format_squad_card(t1_ids, f"⚡ {session['team1_name']}'s Squad")
     squad2 = format_squad_card(t2_ids, f"⚡ {session['team2_name']}'s Squad")
-
-    await context.bot.send_message(chat_id, "🎭 *Both teams revealed!*", parse_mode="Markdown")
+    await context.bot.send_message(chat_id, "🎭 *Both teams are ready! Revealing now...*", parse_mode="Markdown")
+    await asyncio.sleep(1)
     await context.bot.send_message(chat_id, squad1, parse_mode="Markdown")
     await context.bot.send_message(chat_id, squad2, parse_mode="Markdown")
-
-    # 5 second countdown
-    msg = await context.bot.send_message(chat_id, "⏱ Match starts in *5*...", parse_mode="Markdown")
-    for i in range(4, 0, -1):
-        await asyncio.sleep(1)
-        await msg.edit_text(f"⏱ Match starts in *{i}*...", parse_mode="Markdown")
+    msg = await context.bot.send_message(chat_id, "⏱ Match starts in *3*...", parse_mode="Markdown")
+    await asyncio.sleep(1)
+    await msg.edit_text("⏱ Match starts in *2*...", parse_mode="Markdown")
+    await asyncio.sleep(1)
+    await msg.edit_text("⏱ Match starts in *1*...", parse_mode="Markdown")
     await asyncio.sleep(1)
     await msg.edit_text("🏁 *KICKOFF!*", parse_mode="Markdown")
-
     result = simulate_match(t1_ids, t2_ids, session["team1_name"], session["team2_name"])
     report = format_match_report(result)
-
     t1_id = session["team1_id"]
     t2_id = session["team2_id"]
-
     if result["score1"] > result["score2"]:
         record_result(t1_id, "win"); add_coins(t1_id, WIN_COINS)
         record_result(t2_id, "loss"); add_coins(t2_id, LOSS_COINS)
@@ -329,6 +319,5 @@ async def reveal_and_simulate(context, match_key: str, chat_id: int):
         record_result(t1_id, "draw"); add_coins(t1_id, DRAW_COINS)
         record_result(t2_id, "draw"); add_coins(t2_id, DRAW_COINS)
         coins_note = f"\n💰 Both +{DRAW_COINS} coins"
-
     await context.bot.send_message(chat_id, report + coins_note, parse_mode="Markdown")
     draft_sessions.pop(match_key, None)
