@@ -69,7 +69,7 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard_handler))
     app.add_handler(CallbackQueryHandler(accept_challenge_callback,  pattern=r"^(accept|decline):\d+$"))
     app.add_handler(CallbackQueryHandler(quickmatch_accept_callback, pattern=r"^(qmaccept|qmdecline):\d+$"))
-    app.add_handler(CallbackQueryHandler(draft_pick_callback,        pattern=r"^draft:"))
+    app.add_handler(CallbackQueryHandler(quick_draft_pick_callback, pattern=r"^qdraft:"))
     app.add_handler(CallbackQueryHandler(collection_page_callback,   pattern=r"^col:\d+$"))
     logger.info("Bot started. Polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
